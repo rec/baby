@@ -129,28 +129,28 @@
 #define CHOICE_BLUE (1 << 2)
 #define CHOICE_YELLOW   (1 << 3)
 
-#define LED_RED     10
-#define LED_GREEN   3
-#define LED_BLUE    13
-#define LED_YELLOW  5
+#define LED_RED     5
+#define LED_GREEN   2
+#define LED_BLUE    4
+#define LED_YELLOW  3
 
 // Button pin definitions
 #define BUTTON_RED    9
-#define BUTTON_GREEN  2
-#define BUTTON_BLUE   12
-#define BUTTON_YELLOW 6
+#define BUTTON_GREEN  6
+#define BUTTON_BLUE   8
+#define BUTTON_YELLOW 7
 
 // Buzzer pin definitions
-#define BUZZER1  4
-#define BUZZER2  7
+#define BUZZER1  10
 
 // Define game parameters
 #define ROUNDS_TO_WIN      13 //Number of rounds to succesfully remember before you win. 13 is do-able.
 #define ENTRY_TIME_LIMIT   3000 //Amount of time to press a button before game times out. 3000ms = 3 sec
 
-#define MODE_MEMORY  0
+#define MODE_BABY 0
 #define MODE_BATTLE  1
 #define MODE_BEEGEES 2
+#define MODE_MEMORY  3
 
 // Game state variables
 byte gameMode = MODE_MEMORY; //By default, let's play the memory game
@@ -173,10 +173,14 @@ void setup()
   pinMode(LED_YELLOW, OUTPUT);
 
   pinMode(BUZZER1, OUTPUT);
-  pinMode(BUZZER2, OUTPUT);
+
+  Serial.begin(9600);      // open the serial port at 9600 bps:
+  randomSeed(analogRead(0));
+
+
 
   //Mode checking
-  gameMode = MODE_MEMORY; // By default, we're going to play the memory game
+  gameMode = MODE_BABY; // By default, we're going to play the memory game
 
   // Check to see if the lower right button is pressed
   if (checkButton() == CHOICE_YELLOW) play_beegees();
@@ -197,7 +201,26 @@ void setup()
     //Now do nothing. Battle mode will be serviced in the main routine
   }
 
-  play_winner(); // After setup is complete, say hello to the world
+
+  // Check to see if upper right button is pressed
+  if (checkButton() == CHOICE_RED)
+  {
+    gameMode = MODE_MEMORY; //Put game into battle mode
+
+    //Turn on the upper right (green) LED
+    setLEDs(CHOICE_RED);
+    toner(CHOICE_RED, 150);
+
+    setLEDs(CHOICE_GREEN | CHOICE_BLUE | CHOICE_YELLOW); // Turn on the other LEDs until you release button
+
+    while(checkButton() != CHOICE_NONE) ; // Wait for user to stop pressing button
+
+    //Now do nothing. Battle mode will be serviced in the main routine
+  }
+
+  play_winner();
+  Serial.print("The chooses mode is ");
+  Serial.println(gameMode); // After setup is complete, say hello to the world
 }
 
 void loop()
@@ -210,10 +233,13 @@ void loop()
   setLEDs(CHOICE_OFF); // Turn off LEDs
   delay(250);
 
-  if (gameMode == MODE_MEMORY)
+
+
+  if (gameMode == MODE_BABY)
   {
+    Serial.println("BABY MODE ENABLED");
     // Play memory game and handle result
-    if (play_memory() == true)
+    if (play_baby() == true)
       play_winner(); // Player won, play winner tones
     else
       play_loser(); // Player lost, play loser tones
@@ -221,10 +247,22 @@ void loop()
 
   if (gameMode == MODE_BATTLE)
   {
+    Serial.println("BATTLE MODE ENABLED");
     play_battle(); // Play game until someone loses
 
     play_loser(); // Player lost, play loser tones
   }
+  if (gameMode == MODE_MEMORY)
+  {
+      // Play memory game and handle result
+      if (play_memory() == true)
+        play_winner(); // Player won, play winner tones
+      else
+        play_loser(); // Player lost, play loser tones
+  }
+
+
+
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -232,38 +270,42 @@ void loop()
 
 // Play the regular memory game
 // Returns 0 if player loses, or 1 if player wins
-boolean play_memory(void)
+
+boolean play_baby(void)
 {
+
   randomSeed(millis()); // Seed the random generator with random amount of millis()
 
   gameRound = 0; // Reset the game to the beginning
+  int babyRound = 0;
 
-  while (gameRound < ROUNDS_TO_WIN)
+  while (babyRound < ROUNDS_TO_WIN)
   {
-    add_to_moves(); // Add a button to the current moves, then play them back
+    baby_moves(); // Add a button to the current moves, then play them back
+    babyRound++;
 
-    playMoves(); // Play back the current game board
+    playBabyMoves(); // Play back the current game board
 
     // Then require the player to repeat the sequence.
-    for (byte currentMove = 0 ; currentMove < gameRound ; currentMove++)
-    {
-      byte choice = wait_for_button(); // See what button the user presses
+    byte choice = wait_for_button(); // See what button the user presses
 
-      if (choice == 0) return false; // If wait timed out, player loses
+    if (choice == 0) return false; // If wait timed out, player loses
 
-      if (choice != gameBoard[currentMove]) return false; // If the choice is incorect, player loses
-    }
+    if (choice != gameBoard[0]) return false; // If the choice is incorect, player loses
 
     delay(1000); // Player was correct, delay before playing moves
   }
 
   return true; // Player made it through all the rounds to win!
+  Serial.print("You've won");
 }
+
 
 // Play the special 2 player battle mode
 // A player begins by pressing a button then handing it to the other player
 // That player repeats the button and adds one, then passes back.
 // This function returns when someone loses
+
 boolean play_battle(void)
 {
   gameRound = 0; // Reset the game frame back to one frame
@@ -289,6 +331,38 @@ boolean play_battle(void)
   return true; // We should never get here
 }
 
+
+boolean play_memory(void)
+{
+
+  randomSeed(millis()); // Seed the random generator with random amount of millis()
+
+  gameRound = 0; // Reset the game to the beginning
+
+  while (gameRound < ROUNDS_TO_WIN)
+  {
+    add_to_moves(); // Add a button to the current moves, then play them back
+
+    playMoves(); // Play back the current game board
+
+    // Then require the player to repeat the sequence.
+    for (byte currentMove = 0 ; currentMove < gameRound ; currentMove++)
+    {
+      byte choice = wait_for_button(); // See what button the user presses
+
+      if (choice == 0) return false; // If wait timed out, player loses
+
+      if (choice != gameBoard[currentMove]) return false; // If the choice is incorect, player loses
+
+    }
+    Serial.print("Correct, here comes the next one");
+    delay(1000); // Player was correct, delay before playing moves
+  }
+
+  return true; // Player made it through all the rounds to win!
+  Serial.print("You've won");
+}
+
 // Plays the current contents of the game moves
 void playMoves(void)
 {
@@ -302,6 +376,33 @@ void playMoves(void)
   }
 }
 
+void playBabyMoves(void)
+{
+  for (byte currentMove = 0 ; currentMove < gameRound ; currentMove++)
+  {
+    toner(gameBoard[currentMove], 150);
+
+    // Wait some amount of time between button playback
+    // Shorten this to make game harder
+    delay(150); // 150 works well. 75 gets fast.
+  }
+}
+
+// Adds a new random button to the game sequence, by sampling the timer
+void baby_moves(void)
+{
+  byte newButton = random(0, 4); //min (included), max (exluded)
+
+  // We have to convert this number, 0 to 3, to CHOICEs
+  if(newButton == 0) newButton = CHOICE_RED;
+  else if(newButton == 1) newButton = CHOICE_GREEN;
+  else if(newButton == 2) newButton = CHOICE_BLUE;
+  else if(newButton == 3) newButton = CHOICE_YELLOW;
+
+  gameBoard[0] = newButton; // Add this new button to the game array
+  Serial.println(gameRound);
+  Serial.println(newButton);
+}
 // Adds a new random button to the game sequence, by sampling the timer
 void add_to_moves(void)
 {
@@ -314,6 +415,7 @@ void add_to_moves(void)
   else if(newButton == 3) newButton = CHOICE_YELLOW;
 
   gameBoard[gameRound++] = newButton; // Add this new button to the game array
+  Serial.println(gameRound);
 }
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -423,11 +525,10 @@ void buzz_sound(int buzz_length_ms, int buzz_delay_us)
 
     // Toggle the buzzer at various speeds
     digitalWrite(BUZZER1, LOW);
-    digitalWrite(BUZZER2, HIGH);
+
     delayMicroseconds(buzz_delay_us);
 
     digitalWrite(BUZZER1, HIGH);
-    digitalWrite(BUZZER2, LOW);
     delayMicroseconds(buzz_delay_us);
   }
 }
@@ -454,12 +555,10 @@ void winner_sound(void)
   {
     for (byte y = 0 ; y < 3 ; y++)
     {
-      digitalWrite(BUZZER2, HIGH);
-      digitalWrite(BUZZER1, LOW);
+      digitalWrite(BUZZER1, HIGH);
       delayMicroseconds(x);
 
-      digitalWrite(BUZZER2, LOW);
-      digitalWrite(BUZZER1, HIGH);
+      digitalWrite(BUZZER1, LOW);
       delayMicroseconds(x);
     }
   }
@@ -508,6 +607,7 @@ void attractMode(void)
 // The following functions are related to Beegees Easter Egg only
 
 // Notes in the melody. Each note is about an 1/8th note, "0"s are rests.
+
 int melody[] = {
   NOTE_G4, NOTE_A4, 0, NOTE_C5, 0, 0, NOTE_G4, 0, 0, 0,
   NOTE_E4, 0, NOTE_D4, NOTE_E4, NOTE_G4, 0,
@@ -520,6 +620,7 @@ int LEDnumber = 0; // Keeps track of which LED we are on during the beegees loop
 // Do nothing but play bad beegees music
 // This function is activated when user holds bottom right button during power up
 void play_beegees()
+
 {
   //Turn on the bottom right (yellow) LED
   setLEDs(CHOICE_YELLOW);
@@ -534,22 +635,23 @@ void play_beegees()
   delay(1000); // Wait a second before playing song
 
   digitalWrite(BUZZER1, LOW); // setup the "BUZZER1" side of the buzzer to stay low, while we play the tone on the other pin.
-
+Serial.println("Play beegees");
   while(checkButton() == CHOICE_NONE) //Play song until you press a button
   {
     // iterate over the notes of the melody:
     for (int thisNote = 0; thisNote < 32; thisNote++) {
       changeLED();
-      tone(BUZZER2, melody[thisNote],noteDuration);
+      tone(BUZZER1, melody[thisNote],noteDuration);
       // to distinguish the notes, set a minimum time between them.
       // the note's duration + 30% seems to work well:
       int pauseBetweenNotes = noteDuration * 1.30;
       delay(pauseBetweenNotes);
       // stop the tone playing:
-      noTone(BUZZER2);
+      noTone(BUZZER1);
     }
   }
 }
+
 
 // Each time this function is called the board moves to the next LED
 void changeLED(void)
